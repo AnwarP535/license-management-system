@@ -43,7 +43,9 @@ services:
     volumes:
       - ./license-backend:/app
       - /app/node_modules
+    # Entrypoint script will handle bcrypt rebuild automatically
     command: npm run start:dev
+    restart: unless-stopped
 
   frontend:
     build:

@@ -46,14 +46,21 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies and rebuild native modules
-RUN npm install && npm rebuild bcrypt --build-from-source
+# Install all dependencies
+RUN npm install
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Copy source code (will be overridden by volume in docker-compose)
 COPY . .
 
 # Expose port
 EXPOSE 8080
+
+# Use entrypoint to handle bcrypt rebuild on startup
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Start the application in development mode
 CMD ["npm", "run", "start:dev"]

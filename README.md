@@ -46,21 +46,27 @@ Run the entire application stack with a single command:
 git clone <repository-url>
 cd license-management-system
 
-# Copy environment file
+# Copy environment file (optional, defaults work for development)
 cp .env.example .env
 
-# Start all services (PostgreSQL, Backend, Frontend)
-docker-compose up -d
+# Build and start all services (PostgreSQL, Backend, Frontend)
+docker-compose up -d --build
 
 # View logs
 docker-compose logs -f
+
+# Or view logs for a specific service
+docker-compose logs -f backend
+docker-compose logs -f frontend
 ```
 
 That's it! All services will be running:
-- **Frontend**: http://localhost (or http://localhost:80)
+- **Frontend**: http://localhost:3000 (or http://localhost:80)
 - **Backend API**: http://localhost:8080
 - **Swagger Docs**: http://localhost:8080/api-docs
 - **PostgreSQL**: localhost:5432
+
+**Note**: The first startup may take a minute or two as bcrypt native modules are automatically rebuilt for compatibility.
 
 ### Stop Services
 
@@ -70,6 +76,12 @@ docker-compose down
 
 # Stop and remove volumes (deletes database data)
 docker-compose down -v
+
+# Rebuild and restart (useful after code changes)
+docker-compose up -d --build
+
+# Restart services without rebuild
+docker-compose restart
 ```
 
 ### Environment Configuration
