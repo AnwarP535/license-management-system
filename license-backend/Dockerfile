@@ -1,27 +1,22 @@
-FROM node:20-alpine AS builder
+# Stage 1: Build stage
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
 
-# Install dependencies
+# Install all dependencies (including dev dependencies for building)
 RUN npm ci
 
 # Copy source code
-COPY src ./src
+COPY . .
 
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine
-
-# Create a non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nestjs -u 1001
+# Stage 2: Production stage
+FROM node:18-alpine AS production
 
 WORKDIR /app
 
@@ -29,24 +24,36 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && \
-    npm cache clean --force
+RUN npm ci --only=production && npm cache clean --force
 
-# Copy built application from builder
+# Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
-
-# Change ownership of the app directory to the non-root user
-RUN chown -R nestjs:nodejs /app
-
-# Switch to non-root user
-USER nestjs
 
 # Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
-
-# Start the application
+# Start the application in production mode
 CMD ["node", "dist/main"]
+
+# Stage 3: Development stage (for docker-compose with volumes)
+FROM node:18-alpine AS development
+
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies and rebuild native modules
+RUN npm install && npm rebuild bcrypt --build-from-source
+
+# Copy source code (will be overridden by volume in docker-compose)
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Start the application in development mode
+CMD ["npm", "run", "start:dev"]

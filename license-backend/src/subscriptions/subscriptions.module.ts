@@ -9,14 +9,14 @@ import {
 } from './subscriptions.controller';
 import { Subscription } from '../entities/subscription.entity';
 import { Customer } from '../entities/customer.entity';
-import { User } from '../entities/user.entity';
-import { ApiKeyGuard } from '../common/guards/api-key.guard';
 import { SubscriptionPacksModule } from '../subscription-packs/subscription-packs.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Subscription, Customer, User]),
+    TypeOrmModule.forFeature([Subscription, Customer]),
     SubscriptionPacksModule,
+    AuthModule,
   ],
   controllers: [
     AdminSubscriptionsController,
@@ -24,7 +24,7 @@ import { SubscriptionPacksModule } from '../subscription-packs/subscription-pack
     CustomerSubscriptionsController,
     SDKSubscriptionsController,
   ],
-  providers: [SubscriptionsService, ApiKeyGuard],
+  providers: [SubscriptionsService],
   exports: [SubscriptionsService],
 })
 export class SubscriptionsModule {}

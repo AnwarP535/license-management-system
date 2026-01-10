@@ -21,8 +21,8 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column({ name: 'password_hash' })
-  passwordHash: string;
+  @Column()
+  password_hash: string;
 
   @Column({
     type: 'enum',
@@ -31,14 +31,20 @@ export class User {
   })
   role: UserRole;
 
-  @Column({ nullable: true, name: 'api_key' })
-  apiKey: string;
+  @Column({ nullable: true })
+  api_key: string;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @Column({ nullable: true })
+  refresh_token: string;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @Column({ nullable: true })
+  refresh_token_expires_at: Date;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 
   @OneToOne(() => Customer, (customer) => customer.user)
   customer: Customer;

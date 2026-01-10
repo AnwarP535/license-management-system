@@ -7,12 +7,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Customer } from '../entities/customer.entity';
 import { User, UserRole } from '../entities/user.entity';
+import { CreateCustomerDto } from './dto/create-customer.dto';
+import { UpdateCustomerDto } from './dto/update-customer.dto';
 import * as bcrypt from 'bcrypt';
-import {
-  CustomerCreateRequestDto,
-  CustomerUpdateRequestDto,
-  CustomerResponseDto,
-} from '../dto/customer.dto';
 
 @Injectable()
 export class CustomersService {
@@ -23,11 +20,35 @@ export class CustomersService {
     private userRepository: Repository<User>,
   ) {}
 
-  async findAll(
-    page: number = 1,
-    limit: number = 10,
-    search?: string,
-  ): Promise<{ customers: CustomerResponseDto[]; pagination: any }> {
+  async create(createCustomerDto: CreateCustomerDto) {
+    const existingUser = await this.userRepository.findOne({
+      where: { email: createCustomerDto.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('Email already exists');
+    }
+
+    // Create user account
+    const hashedPassword = await bcrypt.hash('defaultPassword123', 10);
+    const user = this.userRepository.create({
+      email: createCustomerDto.email,
+      password_hash: hashedPassword,
+      role: UserRole.CUSTOMER,
+    });
+    const savedUser = await this.userRepository.save(user);
+
+    // Create customer profile
+    const customer = this.customerRepository.create({
+      user_id: savedUser.id,
+      name: createCustomerDto.name,
+      phone: createCustomerDto.phone,
+    });
+
+    return await this.customerRepository.save(customer);
+  }
+
+  async findAll(page: number = 1, limit: number = 10, search?: string) {
     const skip = (page - 1) * limit;
     const where: any = {};
 
@@ -37,24 +58,21 @@ export class CustomersService {
 
     const [customers, total] = await this.customerRepository.findAndCount({
       where,
-      relations: ['user'],
       skip,
       take: limit,
-      order: { createdAt: 'DESC' },
-      withDeleted: false,
+      relations: ['user'],
+      order: { created_at: 'DESC' },
     });
 
-    const customerDtos = customers.map((customer) => ({
-      id: customer.id,
-      name: customer.name,
-      email: customer.user.email,
-      phone: customer.phone,
-      created_at: customer.createdAt,
-      updated_at: customer.updatedAt,
-    }));
-
     return {
-      customers: customerDtos,
+      customers: customers.map((c) => ({
+        id: c.id,
+        name: c.name,
+        email: c.user?.email,
+        phone: c.phone,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+      })),
       pagination: {
         page,
         limit,
@@ -63,11 +81,10 @@ export class CustomersService {
     };
   }
 
-  async findOne(id: number): Promise<CustomerResponseDto> {
+  async findOne(id: number) {
     const customer = await this.customerRepository.findOne({
       where: { id },
       relations: ['user'],
-      withDeleted: false,
     });
 
     if (!customer) {
@@ -77,94 +94,32 @@ export class CustomersService {
     return {
       id: customer.id,
       name: customer.name,
-      email: customer.user.email,
+      email: customer.user?.email,
       phone: customer.phone,
-      created_at: customer.createdAt,
-      updated_at: customer.updatedAt,
+      created_at: customer.created_at,
+      updated_at: customer.updated_at,
     };
   }
 
-  async create(
-    createDto: CustomerCreateRequestDto,
-  ): Promise<CustomerResponseDto> {
-    const existingUser = await this.userRepository.findOne({
-      where: { email: createDto.email },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Email already exists');
-    }
-
-    const passwordHash = await bcrypt.hash('defaultPassword123', 10);
-    const user = this.userRepository.create({
-      email: createDto.email,
-      passwordHash,
-      role: UserRole.CUSTOMER,
-    });
-
-    const savedUser = await this.userRepository.save(user);
-
-    const customer = this.customerRepository.create({
-      userId: savedUser.id,
-      name: createDto.name,
-      phone: createDto.phone,
-    });
-
-    const savedCustomer = await this.customerRepository.save(customer);
-
-    return {
-      id: savedCustomer.id,
-      name: savedCustomer.name,
-      email: savedUser.email,
-      phone: savedCustomer.phone,
-      created_at: savedCustomer.createdAt,
-      updated_at: savedCustomer.updatedAt,
-    };
-  }
-
-  async update(
-    id: number,
-    updateDto: CustomerUpdateRequestDto,
-  ): Promise<CustomerResponseDto> {
-    const customer = await this.customerRepository.findOne({
-      where: { id },
-      relations: ['user'],
-      withDeleted: false,
-    });
+  async update(id: number, updateCustomerDto: UpdateCustomerDto) {
+    const customer = await this.customerRepository.findOne({ where: { id } });
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
 
-    if (updateDto.name) {
-      customer.name = updateDto.name;
-    }
-    if (updateDto.phone) {
-      customer.phone = updateDto.phone;
-    }
-
-    const updatedCustomer = await this.customerRepository.save(customer);
-
-    return {
-      id: updatedCustomer.id,
-      name: updatedCustomer.name,
-      email: customer.user.email,
-      phone: updatedCustomer.phone,
-      created_at: updatedCustomer.createdAt,
-      updated_at: updatedCustomer.updatedAt,
-    };
+    Object.assign(customer, updateCustomerDto);
+    return await this.customerRepository.save(customer);
   }
 
-  async remove(id: number): Promise<void> {
-    const customer = await this.customerRepository.findOne({
-      where: { id },
-      withDeleted: false,
-    });
+  async remove(id: number) {
+    const customer = await this.customerRepository.findOne({ where: { id } });
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
 
     await this.customerRepository.softDelete(id);
+    return { success: true, message: 'Customer deleted successfully' };
   }
 }

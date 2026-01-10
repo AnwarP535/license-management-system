@@ -23,19 +23,11 @@ export class Subscription {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'customer_id' })
-  customerId: number;
+  @Column()
+  customer_id: number;
 
-  @ManyToOne(() => Customer, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'customer_id' })
-  customer: Customer;
-
-  @Column({ name: 'pack_id' })
-  packId: number;
-
-  @ManyToOne(() => SubscriptionPack, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'pack_id' })
-  pack: SubscriptionPack;
+  @Column()
+  pack_id: number;
 
   @Column({
     type: 'enum',
@@ -44,24 +36,32 @@ export class Subscription {
   })
   status: SubscriptionStatus;
 
-  @CreateDateColumn({ name: 'requested_at' })
-  requestedAt: Date;
+  @CreateDateColumn()
+  requested_at: Date;
 
-  @Column({ name: 'approved_at', nullable: true })
-  approvedAt: Date;
+  @Column({ nullable: true })
+  approved_at: Date;
 
-  @Column({ name: 'assigned_at', nullable: true })
-  assignedAt: Date;
+  @Column({ nullable: true })
+  assigned_at: Date;
 
-  @Column({ name: 'expires_at', nullable: true })
-  expiresAt: Date;
+  @Column({ nullable: true })
+  expires_at: Date;
 
-  @Column({ name: 'deactivated_at', nullable: true })
-  deactivatedAt: Date;
+  @Column({ nullable: true })
+  deactivated_at: Date;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @CreateDateColumn()
+  created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @UpdateDateColumn()
+  updated_at: Date;
+
+  @ManyToOne(() => Customer, (customer) => customer.subscriptions)
+  @JoinColumn({ name: 'customer_id' })
+  customer: Customer;
+
+  @ManyToOne(() => SubscriptionPack)
+  @JoinColumn({ name: 'pack_id' })
+  pack: SubscriptionPack;
 }

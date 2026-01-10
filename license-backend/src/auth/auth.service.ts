@@ -2,26 +2,16 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../entities/user.entity';
 import { Customer } from '../entities/customer.entity';
-import {
-  AdminLoginRequestDto,
-  CustomerLoginRequestDto,
-  CustomerSignupRequestDto,
-  AdminLoginResponseDto,
-  CustomerLoginResponseDto,
-  CustomerSignupResponseDto,
-  SDKAuthRequestDto,
-  SDKAuthResponseDto,
-  SignupRequestDto,
-  SignupResponseDto,
-} from '../dto/auth.dto';
+import { AdminLoginDto } from './dto/admin-login.dto';
+import { CustomerLoginDto } from './dto/customer-login.dto';
+import { CustomerSignupDto } from './dto/customer-signup.dto';
 
 @Injectable()
 export class AuthService {
@@ -33,73 +23,91 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async adminLogin(
-    loginDto: AdminLoginRequestDto,
-  ): Promise<AdminLoginResponseDto> {
-    const user = await this.userRepository.findOne({
-      where: { email: loginDto.email, role: UserRole.ADMIN },
+  async validateUser(email: string, password: string): Promise<any> {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (user && (await bcrypt.compare(password, user.password_hash))) {
+      const { password_hash, ...result } = user;
+      return result;
+    }
+    return null;
+  }
+
+  async validateUserById(id: number): Promise<any> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (user) {
+      const { password_hash, ...result } = user;
+      return result;
+    }
+    return null;
+  }
+
+  async validateApiKey(apiKey: string): Promise<any> {
+    const user = await this.userRepository.findOne({ where: { api_key: apiKey } });
+    if (user) {
+      const { password_hash, ...result } = user;
+      return result;
+    }
+    return null;
+  }
+
+  async adminLogin(loginDto: AdminLoginDto) {
+    const user = await this.validateUser(loginDto.email, loginDto.password);
+    if (!user || user.role !== UserRole.ADMIN) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
+    const refreshToken = this.generateRefreshToken();
+    const refreshTokenExpires = new Date();
+    refreshTokenExpires.setDate(refreshTokenExpires.getDate() + 7); // 7 days
+
+    await this.userRepository.update(user.id, {
+      refresh_token: refreshToken,
+      refresh_token_expires_at: refreshTokenExpires,
     });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const isPasswordValid = await bcrypt.compare(
-      loginDto.password,
-      user.passwordHash,
-    );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const token = this.jwtService.sign(payload);
 
     return {
       success: true,
-      token,
+      token: accessToken,
+      refresh_token: refreshToken,
       email: user.email,
       expires_in: 3600,
     };
   }
 
-  async customerLogin(
-    loginDto: CustomerLoginRequestDto,
-  ): Promise<CustomerLoginResponseDto> {
-    const user = await this.userRepository.findOne({
-      where: { email: loginDto.email, role: UserRole.CUSTOMER },
-      relations: ['customer'],
+  async customerLogin(loginDto: CustomerLoginDto) {
+    const user = await this.validateUser(loginDto.email, loginDto.password);
+    if (!user || user.role !== UserRole.CUSTOMER) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const customer = await this.customerRepository.findOne({
+      where: { user_id: user.id },
     });
 
-    if (!user || !user.customer) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
+    const refreshToken = this.generateRefreshToken();
+    const refreshTokenExpires = new Date();
+    refreshTokenExpires.setDate(refreshTokenExpires.getDate() + 7); // 7 days
 
-    const isPasswordValid = await bcrypt.compare(
-      loginDto.password,
-      user.passwordHash,
-    );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const token = this.jwtService.sign(payload);
+    await this.userRepository.update(user.id, {
+      refresh_token: refreshToken,
+      refresh_token_expires_at: refreshTokenExpires,
+    });
 
     return {
       success: true,
-      token,
-      name: user.customer.name,
-      phone: user.customer.phone,
+      token: accessToken,
+      refresh_token: refreshToken,
+      name: customer?.name || '',
+      phone: customer?.phone || '',
       expires_in: 3600,
     };
   }
 
-  async customerSignup(
-    signupDto: CustomerSignupRequestDto,
-  ): Promise<CustomerSignupResponseDto> {
+  async customerSignup(signupDto: CustomerSignupDto) {
     const existingUser = await this.userRepository.findOne({
       where: { email: signupDto.email },
     });
@@ -108,130 +116,104 @@ export class AuthService {
       throw new ConflictException('Email already exists');
     }
 
-    const passwordHash = await bcrypt.hash(signupDto.password, 10);
-
+    const hashedPassword = await bcrypt.hash(signupDto.password, 10);
     const user = this.userRepository.create({
       email: signupDto.email,
-      passwordHash,
+      password_hash: hashedPassword,
       role: UserRole.CUSTOMER,
     });
 
     const savedUser = await this.userRepository.save(user);
 
     const customer = this.customerRepository.create({
-      userId: savedUser.id,
+      user_id: savedUser.id,
       name: signupDto.name,
       phone: signupDto.phone,
     });
 
     await this.customerRepository.save(customer);
 
-    const payload = { sub: savedUser.id, email: savedUser.email, role: savedUser.role };
-    const token = this.jwtService.sign(payload);
+    const payload = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
+    const refreshToken = this.generateRefreshToken();
+    const refreshTokenExpires = new Date();
+    refreshTokenExpires.setDate(refreshTokenExpires.getDate() + 7); // 7 days
+
+    await this.userRepository.update(savedUser.id, {
+      refresh_token: refreshToken,
+      refresh_token_expires_at: refreshTokenExpires,
+    });
 
     return {
       success: true,
       message: 'Account created successfully',
-      token,
+      token: accessToken,
+      refresh_token: refreshToken,
       name: signupDto.name,
       phone: signupDto.phone,
       expires_in: 3600,
     };
   }
 
-  async signup(signupDto: SignupRequestDto): Promise<SignupResponseDto> {
-    const existingUser = await this.userRepository.findOne({
-      where: { email: signupDto.email },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Email already exists');
+  async sdkLogin(loginDto: CustomerLoginDto) {
+    const user = await this.validateUser(loginDto.email, loginDto.password);
+    if (!user || user.role !== UserRole.CUSTOMER) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    const passwordHash = await bcrypt.hash(signupDto.password, 10);
-
-    const user = this.userRepository.create({
-      email: signupDto.email,
-      passwordHash,
-      role: signupDto.role,
-    });
-
-    const savedUser = await this.userRepository.save(user);
-
-    // Only create customer entity if role is CUSTOMER
-    if (signupDto.role === UserRole.CUSTOMER) {
-      if (!signupDto.name || !signupDto.phone) {
-        throw new BadRequestException('Name and phone are required for customer registration');
-      }
-
-      const customer = this.customerRepository.create({
-        userId: savedUser.id,
-        name: signupDto.name,
-        phone: signupDto.phone,
-      });
-
-      await this.customerRepository.save(customer);
+    // Generate or retrieve API key
+    if (!user.api_key) {
+      const apiKey = this.generateApiKey();
+      await this.userRepository.update(user.id, { api_key: apiKey });
+      user.api_key = apiKey;
     }
 
-    const payload = { sub: savedUser.id, email: savedUser.email, role: savedUser.role };
-    const token = this.jwtService.sign(payload);
+    const customer = await this.customerRepository.findOne({
+      where: { user_id: user.id },
+    });
 
+    const payload = { email: user.email, sub: user.id, role: user.role };
     return {
       success: true,
-      message: 'Account created successfully',
-      token,
-      email: savedUser.email,
-      role: savedUser.role,
-      name: signupDto.name,
-      phone: signupDto.phone,
+      api_key: user.api_key,
+      token: this.jwtService.sign(payload),
+      name: customer?.name || '',
+      phone: customer?.phone || '',
       expires_in: 3600,
     };
   }
 
-  async sdkAuth(authDto: SDKAuthRequestDto): Promise<SDKAuthResponseDto> {
+  async refreshToken(refreshToken: string) {
     const user = await this.userRepository.findOne({
-      where: { email: authDto.email, role: UserRole.CUSTOMER },
-      relations: ['customer'],
+      where: { refresh_token: refreshToken },
     });
 
-    if (!user || !user.customer) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (!user) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const isPasswordValid = await bcrypt.compare(
-      authDto.password,
-      user.passwordHash,
-    );
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (!user.refresh_token_expires_at || user.refresh_token_expires_at < new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
     }
 
-    // Generate or reuse API key
-    let apiKey = user.apiKey;
-    if (!apiKey) {
-      apiKey = `sk-sdk-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-      user.apiKey = apiKey;
-      await this.userRepository.save(user);
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const token = this.jwtService.sign(payload);
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
 
     return {
       success: true,
-      api_key: apiKey,
-      token,
-      name: user.customer.name,
-      phone: user.customer.phone,
+      token: accessToken,
       expires_in: 3600,
     };
   }
 
-  async validateUser(userId: number): Promise<User | null> {
-    return this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['customer'],
-    });
+  private generateApiKey(): string {
+    const prefix = 'sk-sdk-';
+    const randomBytes = require('crypto').randomBytes(16).toString('hex');
+    return prefix + randomBytes;
+  }
+
+  private generateRefreshToken(): string {
+    const randomBytes = require('crypto').randomBytes(32).toString('hex');
+    return randomBytes;
   }
 }

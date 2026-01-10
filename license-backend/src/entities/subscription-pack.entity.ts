@@ -26,17 +26,17 @@ export class SubscriptionPack {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
 
-  @Column({ name: 'validity_months' })
-  validityMonths: number;
+  @Column()
+  validity_months: number;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @CreateDateColumn()
+  created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @UpdateDateColumn()
+  updated_at: Date;
 
-  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
-  deletedAt: Date;
+  @DeleteDateColumn()
+  deleted_at: Date;
 
   @OneToMany(() => Subscription, (subscription) => subscription.pack)
   subscriptions: Subscription[];
